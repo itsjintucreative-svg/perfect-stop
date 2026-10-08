@@ -1,0 +1,14 @@
+{
+  "name": "perfect-stop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Perfect Stop mobile game",
+  "scripts": {
+    "build": "echo Perfect Stop is a static Capacitor app"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.0",
+    "@capacitor/core": "^7.4.0",
+    "@capacitor/cli": "^7.4.0"
+  }
+}

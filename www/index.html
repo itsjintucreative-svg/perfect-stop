@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#070707">
+<title>Perfect Stop</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;overflow:hidden;background:#070707;touch-action:none;overscroll-behavior:none;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+body{position:fixed;inset:0}canvas{position:fixed;inset:0;width:100vw;height:100vh;display:block;touch-action:none}
+#ui{position:fixed;inset:0;pointer-events:none}
+#topBar{position:absolute;top:calc(env(safe-area-inset-top) + 22px);left:0;right:0;display:flex;justify-content:center}
+#scoreBox{text-align:center}.label{color:#555;font-size:10px;font-weight:700;letter-spacing:3px}
+#score{margin-top:3px;color:#fff;font-size:36px;line-height:1;font-weight:800}
+#levelBox{position:absolute;top:calc(env(safe-area-inset-top) + 25px);right:22px;text-align:right}
+#level{color:#aaa;font-size:12px;font-weight:700;letter-spacing:2px}
+#combo{margin-top:5px;color:#65ff8a;font-size:12px;font-weight:800;opacity:0;transition:opacity 150ms ease,transform 150ms ease}
+#combo.show{opacity:1;transform:scale(1.08)}
+#best{position:absolute;top:calc(env(safe-area-inset-top) + 28px);left:22px;color:#444;font-size:10px;letter-spacing:1.5px}
+#message{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.75);opacity:0;text-align:center;white-space:nowrap;font-size:clamp(27px,8vw,52px);font-weight:900;letter-spacing:-1.5px;transition:opacity 180ms ease,transform 180ms ease}
+#message.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+#messageSub{margin-top:7px;color:#777;font-size:11px;font-weight:600;letter-spacing:2px}
+#hint{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 28px);text-align:center;color:#383838;font-size:10px;letter-spacing:2.5px}
+#startScreen{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;background:radial-gradient(circle at center,#111 0%,#080808 40%,#050505 100%);transition:opacity 350ms ease}
+#startScreen.hidden{opacity:0;pointer-events:none}
+.title{color:#fff;font-size:clamp(48px,14vw,82px);font-weight:900;letter-spacing:-5px}
+.subtitle{margin-top:12px;color:#555;font-size:10px;font-weight:700;letter-spacing:3px}
+.startButton{margin-top:55px;min-width:165px;padding:16px 30px;border:1px solid #303030;border-radius:999px;background:#111;color:white;font-size:11px;font-weight:800;letter-spacing:2px;outline:none}
+.startButton:active{transform:scale(.95);background:#191919}
+.stats{margin-top:30px;display:flex;gap:30px}.stat{display:flex;flex-direction:column;gap:5px}.statLabel{color:#444;font-size:9px;letter-spacing:2px}.statValue{color:#aaa;font-size:18px;font-weight:800}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="ui">
+<div id="topBar"><div id="scoreBox"><div class="label">SCORE</div><div id="score">0</div></div></div>
+<div id="best">BEST <span id="bestScore">0</span></div>
+<div id="levelBox"><div id="level">LEVEL 1</div><div id="combo">×1 COMBO</div></div>
+<div id="message"><div id="messageMain"></div><div id="messageSub"></div></div>
+<div id="hint">TAP ANYWHERE TO STOP</div>
+</div>
+<div id="startScreen">
+<div class="title">Perfect Stop</div>
+<div class="subtitle">TIMING IS EVERYTHING</div>
+<button class="startButton" id="startButton">TAP TO PLAY</button>
+<div class="stats">
+<div class="stat"><span class="statLabel">HIGH SCORE</span><span class="statValue" id="startHighScore">0</span></div>
+<div class="stat"><span class="statLabel">BEST COMBO</span><span class="statValue" id="startBestCombo">0</span></div>
+</div>
+</div>
+<script>
+(()=>{"use strict";
+const canvas=document.getElementById("game"),ctx=canvas.getContext("2d");
+const scoreEl=document.getElementById("score"),levelEl=document.getElementById("level"),comboEl=document.getElementById("combo"),bestEl=document.getElementById("bestScore"),message=document.getElementById("message"),messageMain=document.getElementById("messageMain"),messageSub=document.getElementById("messageSub"),hint=document.getElementById("hint"),startScreen=document.getElementById("startScreen"),startButton=document.getElementById("startButton"),startHighScore=document.getElementById("startHighScore"),startBestCombo=document.getElementById("startBestCombo");
+let width=0,height=0,dpr=1,centerX=0,centerY=0,radius=0,running=false,resolving=false,angle=0,speed=.025,targetCenter=0,targetWidth=.72,score=0,level=1,combo=0;
+let bestScore=Number(localStorage.getItem("perfectStopHighScore"))||0,bestCombo=Number(localStorage.getItem("perfectStopBestCombo"))||0,particles=[],flashUntil=0,screenShake=0,audioContext=null;
+function resize(){dpr=Math.min(devicePixelRatio||1,2);width=innerWidth;height=innerHeight;canvas.width=width*dpr;canvas.height=height*dpr;canvas.style.width=width+"px";canvas.style.height=height+"px";ctx.setTransform(dpr,0,0,dpr,0,0);centerX=width/2;centerY=height/2;radius=Math.min(width,height)*.31}addEventListener("resize",resize);resize();
+function initAudio(){if(!audioContext){try{audioContext=new(window.AudioContext||window.webkitAudioContext)()}catch(e){}}if(audioContext&&audioContext.state==="suspended")audioContext.resume()}
+function tone(f,d,t="sine",v=.04){if(!audioContext)return;try{const o=audioContext.createOscillator(),g=audioContext.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,audioContext.currentTime);g.gain.exponentialRampToValueAtTime(.001,audioContext.currentTime+d);o.connect(g);g.connect(audioContext.destination);o.start();o.stop(audioContext.currentTime+d)}catch(e){}}
+function successSound(){tone(520,.08);setTimeout(()=>tone(780,.12),65)}function missSound(){tone(150,.16,"sawtooth",.025)}
+function vibrate(p){if("vibrate"in navigator)try{navigator.vibrate(p)}catch(e){}}
+function norm(a){a%=Math.PI*2;return a<0?a+Math.PI*2:a}
+function diff(a,b){let d=norm(a)-norm(b);if(d>Math.PI)d-=Math.PI*2;if(d<-Math.PI)d+=Math.PI*2;return d}
+function configureLevel(){speed=.024+(level-1)*.0024;targetWidth=Math.max(.18,.72-(level-1)*.035);targetCenter=Math.random()*Math.PI*2}
+function inside(){return Math.abs(diff(angle,targetCenter))<=targetWidth/2}
+function missDistance(){return Math.max(0,Math.abs(diff(angle,targetCenter))-targetWidth/2)}
+function particlesCreate(n=45){particles=[];const px=centerX+Math.cos(angle)*radius,py=centerY+Math.sin(angle)*radius;for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,v=1.5+Math.random()*5;particles.push({x:px,y:py,vx:Math.cos(a)*v,vy:Math.sin(a)*v,life:1,size:1.5+Math.random()*3.5})}}
+function updateParticles(){for(const p of particles){p.x+=p.vx;p.y+=p.vy;p.vx*=.97;p.vy*=.97;p.life-=.025}particles=particles.filter(p=>p.life>0)}
+function drawParticles(){for(const p of particles){ctx.globalAlpha=p.life;ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fillStyle="#65ff8a";ctx.fill()}ctx.globalAlpha=1}
+function draw(){
+ctx.clearRect(0,0,width,height);
+const bg=ctx.createRadialGradient(centerX,centerY,0,centerX,centerY,radius*2);bg.addColorStop(0,"#111");bg.addColorStop(1,"#060606");ctx.fillStyle=bg;ctx.fillRect(0,0,width,height);
+let sx=0,sy=0;if(screenShake>0){sx=(Math.random()-.5)*screenShake;sy=(Math.random()-.5)*screenShake;screenShake*=.88;if(screenShake<.1)screenShake=0}ctx.save();ctx.translate(sx,sy);
+ctx.beginPath();ctx.arc(centerX,centerY,radius,0,Math.PI*2);ctx.strokeStyle="rgba(255,255,255,.035)";ctx.lineWidth=20;ctx.stroke();
+ctx.beginPath();ctx.arc(centerX,centerY,radius,0,Math.PI*2);ctx.strokeStyle="#292929";ctx.lineWidth=5;ctx.stroke();
+ctx.beginPath();ctx.arc(centerX,centerY,radius,targetCenter-targetWidth/2,targetCenter+targetWidth/2);ctx.strokeStyle="rgba(101,255,138,.12)";ctx.lineWidth=19;ctx.lineCap="round";ctx.stroke();
+ctx.beginPath();ctx.arc(centerX,centerY,radius,targetCenter-targetWidth/2,targetCenter+targetWidth/2);ctx.strokeStyle="#65ff8a";ctx.lineWidth=7;ctx.stroke();
+const px=centerX+Math.cos(angle)*radius,py=centerY+Math.sin(angle)*radius;
+ctx.beginPath();ctx.arc(px,py,15,0,Math.PI*2);ctx.fillStyle="rgba(255,255,255,.06)";ctx.fill();
+ctx.beginPath();ctx.arc(px,py,5.5,0,Math.PI*2);ctx.fillStyle="#fff";ctx.fill();
+ctx.beginPath();ctx.arc(centerX,centerY,3,0,Math.PI*2);ctx.fillStyle="#333";ctx.fill();drawParticles();ctx.restore();
+if(performance.now()<flashUntil){ctx.fillStyle="rgba(255,35,35,.24)";ctx.fillRect(0,0,width,height)}
+}
+function showMessage(main,sub,ok){messageMain.textContent=main;messageSub.textContent=sub;messageMain.style.color=ok?"#65ff8a":"#ff5555";message.classList.add("show");setTimeout(()=>message.classList.remove("show"),ok?650:1000)}
+function updateCombo(){if(combo<=0){comboEl.classList.remove("show");return}comboEl.textContent="×"+combo+" COMBO";comboEl.classList.add("show")}
+function win(){resolving=true;combo++;const mult=Math.min(combo,10);score+=mult;if(score>bestScore){bestScore=score;localStorage.setItem("perfectStopHighScore",String(bestScore));bestEl.textContent=bestScore}if(combo>bestCombo){bestCombo=combo;localStorage.setItem("perfectStopBestCombo",String(bestCombo))}scoreEl.textContent=score;level++;levelEl.textContent="LEVEL "+level;updateCombo();particlesCreate();successSound();vibrate(combo>=5?[20,20,40]:25);showMessage(combo>=5?"PERFECT!":"LEVEL UP!","+"+mult+" POINT"+(mult!==1?"S":""),true);setTimeout(()=>{configureLevel();angle=Math.random()*Math.PI*2;resolving=false},600)}
+function missText(){const inches=(missDistance()*radius)/96;if(inches<.12)return"SO CLOSE!";if(inches<.5)return"MISSED BY A HAIR!";if(inches<1)return"MISSED BY AN INCH!";if(inches<2)return"MISSED BY "+inches.toFixed(1)+" INCHES!";return"MISSED BY "+Math.round(inches)+" INCHES!"}
+function lose(){resolving=true;flashUntil=performance.now()+200;screenShake=10;missSound();vibrate([80,40,80]);showMessage(missText(),"SCORE RESET",false);score=0;combo=0;level=1;scoreEl.textContent="0";levelEl.textContent="LEVEL 1";updateCombo();setTimeout(()=>{configureLevel();angle=Math.random()*Math.PI*2;resolving=false},1000)}
+function stop(){if(!running||resolving)return;if(inside())win();else lose()}
+function start(){initAudio();running=true;resolving=false;score=0;level=1;combo=0;scoreEl.textContent="0";levelEl.textContent="LEVEL 1";updateCombo();configureLevel();angle=Math.random()*Math.PI*2;startScreen.classList.add("hidden");hint.textContent="TAP ANYWHERE TO STOP"}
+canvas.addEventListener("touchstart",e=>{e.preventDefault();initAudio();stop()},{passive:false});
+canvas.addEventListener("mousedown",e=>{e.preventDefault();initAudio();stop()});
+startButton.addEventListener("touchstart",e=>{e.preventDefault();e.stopPropagation();start()},{passive:false});
+startButton.addEventListener("click",e=>{e.preventDefault();if(!running)start()});
+document.addEventListener("touchmove",e=>e.preventDefault(),{passive:false});
+document.addEventListener("gesturestart",e=>e.preventDefault(),{passive:false});
+bestEl.textContent=bestScore;startHighScore.textContent=bestScore;startBestCombo.textContent=bestCombo;configureLevel();
+function loop(){if(running&&!resolving)angle=norm(angle+speed);updateParticles();draw();requestAnimationFrame(loop)}loop();
+})();
+</script>
+</body>
+</html>

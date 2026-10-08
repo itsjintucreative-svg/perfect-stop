@@ -1,0 +1,6 @@
+{
+  "appId": "com.phinu.perfectstop",
+  "appName": "Perfect Stop",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}
